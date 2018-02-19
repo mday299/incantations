@@ -11,12 +11,13 @@ UAV_SUBNET="192.168.90.255"
 DEFAULT_UAV_PORT=14550
 
 #TODO: need targets based on UAVID
-uav_ids = [1,2,3,4]
+uav_ids = [2,4]
 ids_to_remove = []
 uav_params = {}
 target_component = 1
 param_provider = "A/P" #ATMY or A/P
 done_checking = False
+previous_rcv_time = time.time()
 
 mavutil.set_dialect("gtri_uav")
 
@@ -52,7 +53,7 @@ def isclose(a, b, rel_tol=1e-02):
     return val >= rel_tol
 
 def verify_these_params_for_all_uavs(blessed_param_file):
-    global uav_ids, uav_params, out, param_provider, done_checking
+    global uav_ids, uav_params, out, param_provider, done_checking, previous_rcv_time
 
     params_to_check = {}
 
@@ -75,14 +76,14 @@ def verify_these_params_for_all_uavs(blessed_param_file):
         
     #get parameters from all robots
     for next_uav_id in uav_ids:
+        previous_rcv_time = time.time()
+
         print("Getting local copy of params for uav %d" % next_uav_id)
-        start = time.time()
         success = True
         while (len(uav_params[next_uav_id]) < len(params_to_check) 
                 and success == True):
             
             #print " %d %d " % (len(uav_params[next_uav_id]), len(params_to_check))
-            #print "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
             for param in params_to_check:
                 if param in uav_params[next_uav_id]:
                     continue #already got it
@@ -94,7 +95,7 @@ def verify_these_params_for_all_uavs(blessed_param_file):
                 #don't deluge them :)
                 time.sleep(0.01)
             
-            if time.time() - start > 12:
+            if time.time() - previous_rcv_time > 6:
                 print "Timed out trying to get params for UAV %d" % next_uav_id
                 ids_to_remove.append(next_uav_id) 
                 success = False
@@ -126,6 +127,7 @@ def verify_these_params_for_all_uavs(blessed_param_file):
     done_checking = True
 
 def message_handler_thr():
+    global previous_rcv_time
     while True:
         m = master.recv_msg()
         if m is None:
@@ -140,6 +142,7 @@ def message_handler_thr():
             #print m.valid
             if m.sender_id in uav_params:
                 uav_params[m.sender_id][m.name] = uint_to_float(m.value)
+                previous_rcv_time = time.time()
                 #print "%s %f" % (m.name, uint_to_float(m.value))
         #if m.get_type() == "PARAM_HASHES":
         #    print "saw a param hashes message"
@@ -150,7 +153,8 @@ t = threading.Thread(target=message_handler_thr, name="message_handler_thr")
 t.daemon = True
 t.start()
 
-verify_these_params_for_all_uavs("/home/michael/devel/paramChecker/s1000_jtarv.parm")
+#TODO: un-hardcode this
+verify_these_params_for_all_uavs("/home/michael/devel/incantations/paramChecker/s1000_cuas.parm")
 
 while done_checking == False:
     time.sleep(1)
